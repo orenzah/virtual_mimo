@@ -10,9 +10,9 @@
 #include <algorithm>
 
 #include "Host.h"
-
+#include <string.h>
 namespace aloha {
-
+#define INFINITY (1e999)
 Define_Module(Host);
 
 Host::Host()
@@ -32,6 +32,19 @@ void Host::initialize()
     server = getModuleByPath("server");
     if (!server)
         throw cRuntimeError("server not found");
+
+    int numHosts = getParentModule()->par("numHosts");
+    hosts = (cModule**)malloc(numHosts * sizeof(cModule));
+    distHosts = new double[numHosts];
+    neighborSet = new bool[numHosts];
+    energyHosts = new double[numHosts];
+
+    for (int i = 0; i < numHosts; ++i)
+    {
+        char text[10] = {0};
+        sprintf(text, "host[%d]", i);
+        hosts[i] = getModuleByPath(text);
+    }
 
     txRate = par("txRate");
     iaTime = &par("iaTime");
@@ -64,48 +77,151 @@ void Host::initialize()
 
     getDisplayString().setTagArg("p", 0, x);
     getDisplayString().setTagArg("p", 1, y);
-
-    scheduleAt(getNextTransmissionTime(), endTxEvent);
+    if (true || getId() == 3)
+    {
+        cMessage *msg = new cMessage("initTx");
+        scheduleAt(simTime() + 1, msg);
+    }
+    //scheduleAt(getNextTransmissionTime(), endTxEvent);
 }
 
 void Host::handleMessage(cMessage *msg)
 {
-    ASSERT(msg == endTxEvent);
+    //ASSERT(msg == endTxEvent);
+    if (msg->isSelfMessage())
+    {
+        if (true || strcmp(msg->getName(), "initTX") == 0)
+        {
+            int numHosts = getParentModule()->par("numHosts");
+            simtime_t _duration;
+            for (int i = 0; i < numHosts; ++i)
+            {
+                if (getId() == hosts[i]->getId())
+                    continue;
+                // generate packet and schedule timer when it ends
+                double hostX = hosts[i]->par("x").doubleValue();
+                double hostY = hosts[i]->par("y").doubleValue();
+                double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
+                distHosts[i] = dist;
+                radioDelay = dist / propagationSpeed;
 
-    getParentModule()->getCanvas()->setAnimationSpeed(transmissionEdgeAnimationSpeed, this);
+                char pkname[40];
+                sprintf(pkname, "locationPacket-%03d-#%03d", getId(), pkCounter++);
 
-    if (state == IDLE) {
-        // generate packet and schedule timer when it ends
-        char pkname[40];
-        sprintf(pkname, "pk-%d-#%d", getId(), pkCounter++);
-        EV << "generating packet " << pkname << endl;
+                EV << "generating packet " << pkname << endl;
 
-        state = TRANSMIT;
-        emit(stateSignal, state);
+                state = TRANSMIT;
+                emit(stateSignal, state);
 
-        cPacket *pk = new cPacket(pkname);
-        pk->setBitLength(pkLenBits->intValue());
-        simtime_t duration = pk->getBitLength() / txRate;
-        sendDirect(pk, radioDelay, duration, server->gate("in"));
+                cPacket *pk = new cPacket(pkname);
+                char parPower[40] = {0};
 
-        scheduleAt(simTime()+duration, endTxEvent);
 
-        // let visualization code know about the new packet
-        if (transmissionRing != nullptr) {
-            delete lastPacket;
-            lastPacket = pk->dup();
+                pk->setBitLength(pkLenBits->intValue());
+                simtime_t duration = pk->getBitLength() / txRate;
+                _duration = duration;
+                pk->setKind(2);
+                //pk->setName("loc");
+
+
+
+                sendDirect(pk, radioDelay, duration + exponential(0.001), hosts[i]->gate("in"));
+
+
+
+
+
+
+
+
+                // let visualization code know about the new packet
+                if (transmissionRing != nullptr) {
+                    delete lastPacket;
+                    lastPacket = pk->dup();
+                }
+            }
         }
     }
-    else if (state == TRANSMIT) {
-        // endTxEvent indicates end of transmission
-        state = IDLE;
-        emit(stateSignal, state);
+    else    //message from the outside
+    {
+        //if msg is loc
+        if(msg->getKind()==2){
 
-        // schedule next sending
-        scheduleAt(getNextTransmissionTime(), endTxEvent);
+
+        cPacket *pkt = check_and_cast<cPacket *>(msg);
+        EV << pkt->getName() << endl;
+        int i=0;
+
+        int numHosts = getParentModule()->par("numHosts");
+        //"get sender x y"
+        for (int i = 0; i < numHosts; ++i)
+        {
+            double hostX = hosts[i]->par("x").doubleValue();
+            double hostY = hosts[i]->par("y").doubleValue();
+            double maxRange = getParentModule()->par("maxRange");
+            if (distHosts[i] <= maxRange and getId() != hosts[i]->getId())
+            {
+                neighborSet[i]=true;
+                energyHosts[i]= calculateEnergeyConsumptionPerBit(hostX,hostY,pkt->getBitLength());
+            }
+            else
+            {
+                neighborSet[i]=false;
+                energyHosts[i]=INFINITY;
+            }
+            for (int i = 0; i < numHosts; ++i)
+            {
+                EV<<"Host "<<i<<": distance:"<< distHosts[i]<< "   energy:"<< energyHosts[i]<<"   neighbor?  "<<neighborSet[i]<<"   "<<endl;
+            }
+
+        }
     }
-    else {
-        throw cRuntimeError("invalid state");
+
+//        getParentModule()->getCanvas()->setAnimationSpeed(transmissionEdgeAnimationSpeed, this);
+//        if (true || state == IDLE) {
+//            int numHosts = getParentModule()->par("numHosts");
+//            simtime_t _duration;
+//            for (int i = 0; i < numHosts; ++i)
+//            {
+//                if (getId() == hosts[i]->getId())
+//                    continue;
+//                // generate packet and schedule timer when it ends
+//                char pkname[40];
+//                sprintf(pkname, "pk-%d-#%d", getId(), pkCounter++);
+//                EV << "generating packet " << pkname << endl;
+//
+//                state = TRANSMIT;
+//                emit(stateSignal, state);
+//
+//                cPacket *pk = new cPacket(pkname);
+//                pk->setBitLength(pkLenBits->intValue());
+//                simtime_t duration = pk->getBitLength() / txRate;
+//                _duration = duration;
+//
+//
+//
+//                double hostX = hosts[i]->par("x").doubleValue();
+//                double hostY = hosts[i]->par("y").doubleValue();
+//                double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
+//
+//                radioDelay = dist / propagationSpeed;
+//
+//                sendDirect(pk, radioDelay, duration + exponential(0.001), hosts[i]->gate("in"));
+//
+//
+//
+//
+//
+//
+//
+//                // let visualization code know about the new packet
+//                if (transmissionRing != nullptr) {
+//                    delete lastPacket;
+//                    lastPacket = pk->dup();
+//                }
+//            }
+//            //scheduleAt(simTime()+_duration, endTxEvent);
+//        }
     }
 }
 
@@ -233,6 +349,9 @@ void Host::refreshDisplay() const
         getDisplayString().setTagArg("t", 0, "TRANSMIT");
     }
 }
-
+double Host::calculateEnergeyConsumptionPerBit(double x, double y, int bitsCount)
+{
+    return std::sqrt((this->x-x) * (this->x-x) + (this->y-y) * (this->y-y));
+}
 
 }; //namespace

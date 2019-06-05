@@ -19,6 +19,7 @@ simple Host
         double txRate @unit(bps);          // transmission rate
         volatile int pkLenBits @unit(b);   // packet length in bits
         volatile double iaTime @unit(s);   // packet interarrival time
+        double txPower @ unit(dBm);
         double slotTime @unit(s);          // zero means no slots (pure Aloha)
         double x @unit(m);                 // the x coordinate of the host
         double y @unit(m);                 // the y coordinate of the host
@@ -27,5 +28,7 @@ simple Host
         double midTransmissionAnimationSpeed; // used during transmission
         bool controlAnimationSpeed = default(true);
         @display("i=device/pc_s");
+    gates:
+        input in @directIn;
 }
 

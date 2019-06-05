@@ -30,8 +30,11 @@ class Host : public cSimpleModule
     simtime_t slotTime;
     bool isSlotted;
 
+
     // state variables, event pointers etc
     cModule *server;
+    cModule **hosts;
+
     cMessage *endTxEvent;
     enum { IDLE = 0, TRANSMIT = 1 } state;
     simsignal_t stateSignal;
@@ -54,7 +57,10 @@ class Host : public cSimpleModule
     cPacket *lastPacket = nullptr; // a copy of the last sent message, needed for animation
     mutable cRingFigure *transmissionRing = nullptr; // shows the last packet
     mutable std::vector<cOvalFigure *> transmissionCircles; // ripples inside the packet ring
-
+    //algorithms
+    double *distHosts;
+    double *energyHosts;
+    bool *neighborSet;
   public:
     Host();
     virtual ~Host();
@@ -63,6 +69,7 @@ class Host : public cSimpleModule
     virtual void initialize() override;
     virtual void handleMessage(cMessage *msg) override;
     virtual void refreshDisplay() const override;
+    double calculateEnergeyConsumptionPerBit(double x, double y, int bitsCount);
     simtime_t getNextTransmissionTime();
 };
 
