@@ -9,7 +9,7 @@
 
 #ifndef __ALOHA_HOST_H_
 #define __ALOHA_HOST_H_
-
+#define PI 3.14159265359
 #include <omnetpp.h>
 
 using namespace omnetpp;
@@ -47,8 +47,8 @@ class Host : public cSimpleModule
     const double propagationSpeed = 299792458.0;
 
     // animation parameters
-    const double ringMaxRadius = 2000; // in m
-    const double circlesMaxRadius = 1000; // in m
+    const double ringMaxRadius = 200; // in m
+    const double circlesMaxRadius = 100; // in m
     double idleAnimationSpeed;
     double transmissionEdgeAnimationSpeed;
     double midtransmissionAnimationSpeed;
@@ -58,7 +58,9 @@ class Host : public cSimpleModule
     mutable cRingFigure *transmissionRing = nullptr; // shows the last packet
     mutable std::vector<cOvalFigure *> transmissionCircles; // ripples inside the packet ring
     //algorithms
-    double *distHosts;
+    double  *distHosts;
+    double  *shortestPath;
+    int     *throughPath;
     double *energyHosts;
     bool *neighborSet;
   public:
@@ -69,7 +71,7 @@ class Host : public cSimpleModule
     virtual void initialize() override;
     virtual void handleMessage(cMessage *msg) override;
     virtual void refreshDisplay() const override;
-    double calculateEnergeyConsumptionPerBit(double x, double y, int bitsCount);
+    double calculateEnergeyConsumptionPerBit(double x, double y,int numTx, int numRx ,int bitsCount);
     simtime_t getNextTransmissionTime();
 };
 

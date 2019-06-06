@@ -11,6 +11,7 @@
 
 #include "Host.h"
 #include <string.h>
+using namespace std;
 namespace aloha {
 #define INFINITY (1e999)
 Define_Module(Host);
@@ -38,10 +39,12 @@ void Host::initialize()
     distHosts = new double[numHosts];
     neighborSet = new bool[numHosts];
     energyHosts = new double[numHosts];
-
+    shortestPath = new double[numHosts];
+    throughPath = new int[numHosts];
     for (int i = 0; i < numHosts; ++i)
     {
         char text[10] = {0};
+        shortestPath[i] = INFINITY;
         sprintf(text, "host[%d]", i);
         hosts[i] = getModuleByPath(text);
     }
@@ -80,8 +83,15 @@ void Host::initialize()
     if (true || getId() == 3)
     {
         cMessage *msg = new cMessage("initTx");
-        scheduleAt(simTime() + 1, msg);
+        scheduleAt(simTime(), msg);
     }
+
+    if (getId() == hosts[0]->getId())
+    {
+        cMessage *msg = new cMessage("initBellmanFord");
+        scheduleAt(simTime() + 0.2, msg);
+    }
+
     //scheduleAt(getNextTransmissionTime(), endTxEvent);
 }
 
@@ -90,8 +100,9 @@ void Host::handleMessage(cMessage *msg)
     //ASSERT(msg == endTxEvent);
     if (msg->isSelfMessage())
     {
-        if (true || strcmp(msg->getName(), "initTX") == 0)
+        if (strcmp(msg->getName(), "initTx") == 0)
         {
+
             int numHosts = getParentModule()->par("numHosts");
             simtime_t _duration;
             for (int i = 0; i < numHosts; ++i)
@@ -125,7 +136,7 @@ void Host::handleMessage(cMessage *msg)
 
 
 
-                sendDirect(pk, radioDelay, duration + exponential(0.001), hosts[i]->gate("in"));
+                sendDirect(pk, radioDelay, duration, hosts[i]->gate("in"));
 
 
 
@@ -141,87 +152,147 @@ void Host::handleMessage(cMessage *msg)
                 }
             }
         }
+        else if (strcmp(msg->getName(), "initBellmanFord") == 0)
+        {
+            int hostNumber = getParentModule()->par("baseStationId");
+            EV << "Running Bellman-Ford from base station node #" << hostNumber << endl;
+            int numHosts = getParentModule()->par("numHosts");
+            simtime_t _duration;
+            for (int i = 0; i < numHosts; ++i)
+            {
+                 if (!neighborSet[i])
+                     continue;
+                 // generate packet and schedule timer when it ends
+                 double hostX = hosts[i]->par("x").doubleValue();
+                 double hostY = hosts[i]->par("y").doubleValue();
+                 double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
+                 distHosts[i] = dist;
+                 radioDelay = dist / propagationSpeed;
+
+                 char pkname[60];
+                 sprintf(pkname, "bellmanFord-%03d-d=%012.3f", i, 0);
+
+                 EV << "generating packet " << pkname << endl;
+
+                 state = TRANSMIT;
+                 emit(stateSignal, state);
+
+                 cPacket *pk = new cPacket(pkname);
+
+
+
+                 pk->setBitLength(pkLenBits->intValue());
+                 simtime_t duration = pk->getBitLength() / txRate;
+                 _duration = duration;
+                 pk->setKind(3);
+
+
+                 sendDirect(pk, radioDelay, duration, hosts[i]->gate("in"));
+
+                if (transmissionRing != nullptr)
+                {
+                    delete lastPacket;
+                    lastPacket = pk->dup();
+                }
+            }
+        }
     }
     else    //message from the outside
     {
         //if msg is loc
-        if(msg->getKind()==2){
-
-
-        cPacket *pkt = check_and_cast<cPacket *>(msg);
-        EV << pkt->getName() << endl;
-        int i=0;
-
-        int numHosts = getParentModule()->par("numHosts");
-        //"get sender x y"
-        for (int i = 0; i < numHosts; ++i)
+        if(msg->getKind()==2)
         {
-            double hostX = hosts[i]->par("x").doubleValue();
-            double hostY = hosts[i]->par("y").doubleValue();
-            double maxRange = getParentModule()->par("maxRange");
-            if (distHosts[i] <= maxRange and getId() != hosts[i]->getId())
-            {
-                neighborSet[i]=true;
-                energyHosts[i]= calculateEnergeyConsumptionPerBit(hostX,hostY,pkt->getBitLength());
-            }
-            else
-            {
-                neighborSet[i]=false;
-                energyHosts[i]=INFINITY;
-            }
+
+
+            cPacket *pkt = check_and_cast<cPacket *>(msg);
+            EV << pkt->getName() << endl;
+            int i=0;
+
+            int numHosts = getParentModule()->par("numHosts");
+            //"get sender x y"
             for (int i = 0; i < numHosts; ++i)
             {
-                EV<<"Host "<<i<<": distance:"<< distHosts[i]<< "   energy:"<< energyHosts[i]<<"   neighbor?  "<<neighborSet[i]<<"   "<<endl;
+                double hostX = hosts[i]->par("x").doubleValue();
+                double hostY = hosts[i]->par("y").doubleValue();
+                double maxRange = getParentModule()->par("maxRange");
+                if (distHosts[i] <= maxRange and getId() != hosts[i]->getId())
+                {
+                    neighborSet[i]=true;
+                    energyHosts[i]= calculateEnergeyConsumptionPerBit(hostX,hostY,0,0,pkt->getBitLength());
+                    //energyHosts[i] = 1;
+                }
+                else
+                {
+                    neighborSet[i]=false;
+                    energyHosts[i]=INFINITY;
+                }
+                for (int i = 0; i < numHosts; ++i)
+                {
+                    EV<<"Host "<<i<<": distance:"<< distHosts[i]<< "   energy:"<< energyHosts[i]<<"   neighbor?  "<<neighborSet[i]<<"   "<<endl;
+                }
+
             }
-
         }
-    }
+        else if (msg->getKind() == 3)
+        {
+            double newDistance = 0;
+            int senderHost = 0;
+            const char *messageText = msg->getName();
+            sscanf(messageText, "%*18s%012.3f", &newDistance);
+            sscanf(messageText, "%*12s%03d", &senderHost);
+            int hostNumber = getParentModule()->par("baseStationId");
+            EV << "Running Bellman-Ford from base station node #" << hostNumber << endl;
+            int numHosts = getParentModule()->par("numHosts");
+            simtime_t _duration;
+            for (int i = 0; i < numHosts; ++i)
+            {
+                 if (!neighborSet[i])
+                     continue;
 
-//        getParentModule()->getCanvas()->setAnimationSpeed(transmissionEdgeAnimationSpeed, this);
-//        if (true || state == IDLE) {
-//            int numHosts = getParentModule()->par("numHosts");
-//            simtime_t _duration;
-//            for (int i = 0; i < numHosts; ++i)
-//            {
-//                if (getId() == hosts[i]->getId())
-//                    continue;
-//                // generate packet and schedule timer when it ends
-//                char pkname[40];
-//                sprintf(pkname, "pk-%d-#%d", getId(), pkCounter++);
-//                EV << "generating packet " << pkname << endl;
-//
-//                state = TRANSMIT;
-//                emit(stateSignal, state);
-//
-//                cPacket *pk = new cPacket(pkname);
-//                pk->setBitLength(pkLenBits->intValue());
-//                simtime_t duration = pk->getBitLength() / txRate;
-//                _duration = duration;
-//
-//
-//
-//                double hostX = hosts[i]->par("x").doubleValue();
-//                double hostY = hosts[i]->par("y").doubleValue();
-//                double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
-//
-//                radioDelay = dist / propagationSpeed;
-//
-//                sendDirect(pk, radioDelay, duration + exponential(0.001), hosts[i]->gate("in"));
-//
-//
-//
-//
-//
-//
-//
-//                // let visualization code know about the new packet
-//                if (transmissionRing != nullptr) {
-//                    delete lastPacket;
-//                    lastPacket = pk->dup();
-//                }
-//            }
-//            //scheduleAt(simTime()+_duration, endTxEvent);
-//        }
+                 double dist = distHosts[i];
+                 radioDelay = dist / propagationSpeed;
+                 if (std::pow(dist,2)  + newDistance < shortestPath[i])
+                 {
+                     shortestPath[i] = std::pow(dist,2) + newDistance;
+                     //TODO
+                     //fix the distance, should be powered by 2
+                     throughPath[i] = senderHost;
+                     EV << "Found better path through host[" << senderHost  << "]" << endl;
+                 }
+                 else
+                 {
+                     continue;
+                 }
+
+                 char pkname[60];
+                 sprintf(pkname, "bellmanFord-%03d-d=%012.3f", i, shortestPath[i]);
+
+                 EV << "generating packet " << pkname << endl;
+
+                 state = TRANSMIT;
+                 emit(stateSignal, state);
+
+                 cPacket *pk = new cPacket(pkname);
+
+
+
+                 pk->setBitLength(pkLenBits->intValue());
+                 simtime_t duration = pk->getBitLength() / txRate;
+                 _duration = duration;
+                 pk->setKind(3);
+
+
+                 sendDirect(pk, radioDelay, duration, hosts[i]->gate("in"));
+
+                if (transmissionRing != nullptr)
+                {
+                    delete lastPacket;
+                    lastPacket = pk->dup();
+                }
+            }
+        }
+
+
     }
 }
 
@@ -349,9 +420,29 @@ void Host::refreshDisplay() const
         getDisplayString().setTagArg("t", 0, "TRANSMIT");
     }
 }
-double Host::calculateEnergeyConsumptionPerBit(double x, double y, int bitsCount)
+double Host::calculateEnergeyConsumptionPerBit(double x, double y,int numTx, int numRx ,int bitsCount)
 {
-    return std::sqrt((this->x-x) * (this->x-x) + (this->y-y) * (this->y-y));
+    //TODO
+    /*
+    double energyPerBit = 0;
+    double constSize = getParentModule()->par("constellation").doubleValue();
+    double epsilon = 3*(std::sqrt(std::pow(2,constSize))-1)/(std::sqrt(std::pow(2,constSize))+1);
+    double pBitError = getParentModule()->par("bitErrorProbability").doubleValue();
+
+    double spectralDensity = getParentModule()->par("noiseSpectralDensity").doubleValue();
+    double alpha = (epsilon / 0.35) - 1;
+
+    energyPerBit = (2.0/3.0)*(1 + alpha) * std::pow(pBitError / 4 , -(1/(numTx*numRx)))*((std::pow(2,constSize) - 1)/(std::pow(constSize, (1/(numTx*numRx+1)))))*spectralDensity;
+    double dSum = 0;
+    for (int i = 1;i < numTx; ++i)
+    {
+        for (int j = 1;j < numRx; ++j)
+        {
+            //dSum += (4*PI * )
+        }
+    }
+    */
+    return (((this->x-x) * (this->x-x) + (this->y-y) * (this->y-y)));
 }
 
 }; //namespace
