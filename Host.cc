@@ -38,15 +38,24 @@ void Host::initialize()
     hosts = (cModule**)malloc(numHosts * sizeof(cModule));
     distHosts = new double[numHosts];
     neighborSet = new bool[numHosts];
+    childrens = new bool[numHosts]();
     energyHosts = new double[numHosts];
     shortestPath = new double[numHosts];
     throughPath = new int[numHosts];
+    shortestPathDistance = INFINITY;
+
     for (int i = 0; i < numHosts; ++i)
     {
         char text[10] = {0};
         shortestPath[i] = INFINITY;
+
+
         sprintf(text, "host[%d]", i);
         hosts[i] = getModuleByPath(text);
+        if (hosts[i]->getId() == getId())
+        {
+            hostId = i;
+        }
     }
 
     txRate = par("txRate");
@@ -57,6 +66,7 @@ void Host::initialize()
     isSlotted = slotTime > 0;
     WATCH(slotTime);
     WATCH(isSlotted);
+    int *p2 = new int[10]();    // block of ten ints value initialized to 0
 
     endTxEvent = new cMessage("send/endTx");
     state = IDLE;
@@ -88,9 +98,19 @@ void Host::initialize()
 
     if (getId() == hosts[0]->getId())
     {
-        cMessage *msg = new cMessage("initBellmanFord");
-        scheduleAt(simTime() + 0.2, msg);
+        {
+            cMessage *msg = new cMessage("initBellmanFord");
+            scheduleAt(simTime() + 0.2, msg);
+        }
+        {
+            cMessage *msg = new cMessage("initDetection");
+            scheduleAt(4, msg);
+        }
     }
+
+    cMessage *msg = new cMessage("initFamily");
+    scheduleAt(3, msg);
+
 
     //scheduleAt(getNextTransmissionTime(), endTxEvent);
 }
@@ -98,12 +118,14 @@ void Host::initialize()
 void Host::handleMessage(cMessage *msg)
 {
     //ASSERT(msg == endTxEvent);
+    cout << "I'm host[" << hostId << "] " << msg->getName() << endl;
     if (msg->isSelfMessage())
     {
         if (strcmp(msg->getName(), "initTx") == 0)
         {
 
             int numHosts = getParentModule()->par("numHosts");
+            double maxRange = getParentModule()->par("maxRange");
             simtime_t _duration;
             for (int i = 0; i < numHosts; ++i)
             {
@@ -114,10 +136,16 @@ void Host::handleMessage(cMessage *msg)
                 double hostY = hosts[i]->par("y").doubleValue();
                 double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
                 distHosts[i] = dist;
+                if (dist > maxRange)
+                {
+                    distHosts[i] = INFINITY;
+                    continue;
+                }
+
                 radioDelay = dist / propagationSpeed;
 
                 char pkname[40];
-                sprintf(pkname, "locationPacket-%03d-#%03d", getId(), pkCounter++);
+                sprintf(pkname, "locationPacket-%03d-#%03d", hostId, pkCounter++);
 
                 EV << "generating packet " << pkname << endl;
 
@@ -158,6 +186,8 @@ void Host::handleMessage(cMessage *msg)
             EV << "Running Bellman-Ford from base station node #" << hostNumber << endl;
             int numHosts = getParentModule()->par("numHosts");
             simtime_t _duration;
+            shortestPath[hostId] = 0;
+            shortestPathDistance = 0;
             for (int i = 0; i < numHosts; ++i)
             {
                  if (!neighborSet[i])
@@ -170,7 +200,7 @@ void Host::handleMessage(cMessage *msg)
                  radioDelay = dist / propagationSpeed;
 
                  char pkname[60];
-                 sprintf(pkname, "bellmanFord-%03d-d=%012.3f", i, 0);
+                 sprintf(pkname, "BellmanFord-%03d-d=%012.3f", 0, 0);
 
                  EV << "generating packet " << pkname << endl;
 
@@ -194,6 +224,74 @@ void Host::handleMessage(cMessage *msg)
                     delete lastPacket;
                     lastPacket = pk->dup();
                 }
+            }
+        }
+        else if (strcmp(msg->getName(), "initFamily") == 0)
+        {
+
+
+            int numHosts = getParentModule()->par("numHosts");
+            simtime_t _duration;
+            int i = -1;
+            double min = INFINITY;
+            for (int j = 0; j < numHosts; ++j)
+            {
+                if (shortestPath[j] == shortestPathDistance)
+                {
+                    //min = shortestPath[j];
+                    i = j;
+                }
+            }
+            //found my papa, now set myParent
+            myParent = i;
+            cout << "Distance: " << min << endl;
+            cout << "Telling parent I'm its children #" << i << endl;
+            // generate packet and schedule timer when it ends
+            double hostX = hosts[i]->par("x").doubleValue();
+            double hostY = hosts[i]->par("y").doubleValue();
+            double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
+            distHosts[i] = dist;
+            radioDelay = dist / propagationSpeed;
+
+            char pkname[60];
+            sprintf(pkname, "papa-%03d", hostId);
+
+            EV << "generating packet " << pkname << endl;
+
+            state = TRANSMIT;
+            emit(stateSignal, state);
+
+            cPacket *pk = new cPacket(pkname);
+
+
+
+            pk->setBitLength(pkLenBits->intValue());
+            simtime_t duration = pk->getBitLength() / txRate;
+            _duration = duration;
+            pk->setKind(4);
+
+
+            sendDirect(pk, radioDelay, duration, hosts[i]->gate("in"));
+
+            if (transmissionRing != nullptr)
+            {
+                delete lastPacket;
+                lastPacket = pk->dup();
+            }
+
+        }
+        else if (strcmp(msg->getName(), "initDetection") == 0)
+        {
+            int numHosts = getParentModule()->par("numHosts");
+            for (int i = 0; i < numHosts; ++i)
+            {
+                 if (!childrens[i])
+                     continue;
+                 if (i == hostId)
+                 {
+                     continue;
+                 }
+                 sendDCT(i, 0, 0);
             }
         }
     }
@@ -238,12 +336,31 @@ void Host::handleMessage(cMessage *msg)
             double newDistance = 0;
             int senderHost = 0;
             const char *messageText = msg->getName();
-            sscanf(messageText, "%*18s%012.3f", &newDistance);
+            sscanf(messageText, "%*18s%lf", &newDistance);
             sscanf(messageText, "%*12s%03d", &senderHost);
             int hostNumber = getParentModule()->par("baseStationId");
             EV << "Running Bellman-Ford from base station node #" << hostNumber << endl;
             int numHosts = getParentModule()->par("numHosts");
             simtime_t _duration;
+            double _dist = distHosts[senderHost];
+            EV << "My Distance to #" <<  senderHost << " d=" << _dist << endl;
+            EV << "New Distance from #" <<  senderHost << " d=" << newDistance << endl;
+            EV << "My Best d=" << shortestPathDistance << endl;
+            if (std::pow(_dist,2) + newDistance < shortestPathDistance)
+            {
+
+                shortestPathDistance = std::pow(_dist,2) + newDistance;
+                //TODO
+                //fix the distance, should be powered by 2
+                shortestPath[senderHost] = shortestPathDistance;
+                EV << "Found better path through host[" << senderHost  << "] d=" << shortestPathDistance << endl;
+
+            }
+            else
+            {
+                return;
+            }
+
             for (int i = 0; i < numHosts; ++i)
             {
                  if (!neighborSet[i])
@@ -251,21 +368,9 @@ void Host::handleMessage(cMessage *msg)
 
                  double dist = distHosts[i];
                  radioDelay = dist / propagationSpeed;
-                 if (std::pow(dist,2)  + newDistance < shortestPath[i])
-                 {
-                     shortestPath[i] = std::pow(dist,2) + newDistance;
-                     //TODO
-                     //fix the distance, should be powered by 2
-                     throughPath[i] = senderHost;
-                     EV << "Found better path through host[" << senderHost  << "]" << endl;
-                 }
-                 else
-                 {
-                     continue;
-                 }
 
                  char pkname[60];
-                 sprintf(pkname, "bellmanFord-%03d-d=%012.3f", i, shortestPath[i]);
+                 sprintf(pkname, "BellmanFord-%03d-d=%012.5f", hostId, shortestPathDistance);
 
                  EV << "generating packet " << pkname << endl;
 
@@ -291,10 +396,30 @@ void Host::handleMessage(cMessage *msg)
                 }
             }
         }
+        else if (msg->getKind() == 4)
+        {
+            const char *messageText = msg->getName();
+            int hostNumber = -1;
+            //papa-000
+            sscanf(messageText, "%*5s%3d", &hostNumber);
+            if (hostNumber != -1)
+            {
+                childrens[hostNumber] = true;
+            }
 
+        }
+        else if (msg->getKind() == 5)
+        {
+            recvDCT(msg);
+        }
+        else if (msg->getKind() == 6)
+        {
+            recvPTS(msg);
+        }
 
     }
 }
+
 
 simtime_t Host::getNextTransmissionTime()
 {
@@ -443,6 +568,228 @@ double Host::calculateEnergeyConsumptionPerBit(double x, double y,int numTx, int
     }
     */
     return (((this->x-x) * (this->x-x) + (this->y-y) * (this->y-y)));
+}
+void Host::recvPTS(cMessage* msg)
+{
+    const char *messageText = msg->getName();
+    int numHosts = getParentModule()->par("numHosts");
+    //PartnerSelect-000-pts(000,000)
+    int senderHost = 0;
+    sscanf(messageText, "%*14s%03d", &senderHost);
+    for (int i = 0; i < numHosts; ++i)
+    {
+        double weight = 0;
+        if (hostId == 6)
+        {
+            cout << "host["<< i <<  "] is children: " << !childrens[i] << endl;
+            cout << "I am: " << hostId << endl;
+        }
+        if (!childrens[i]) //if not my child, skip
+        {
+            continue;
+        }
+        //else
+        if (i == hostId)
+        {
+            continue;
+        }
+        sendDCT(i, 1, senderHost);
+    }
+    setPartner(senderHost);
+    //Finished = true TODO
+}
+void Host::recvDCT(cMessage* msg)
+{
+
+    const char *messageText = msg->getName();
+    int numHosts = getParentModule()->par("numHosts");
+    //Detection-%03d-dct(%01d,%03d)
+    int senderHost = 0;
+    int isPaired = 0;
+    int pairedId = 0;
+    sscanf(messageText, "%*10s%03d", &senderHost);
+    sscanf(messageText, "%*18s%1d", &isPaired);
+    sscanf(messageText, "%*20s%03d", &pairedId);
+    double gamma = getParentModule()->par("gamma");
+    double maximalWeight = -INFINITY;
+    int maximallWeightId = -1;
+    if (isPaired == 0) //Case (a) papa has a no pair
+    {
+
+        for (int i = 0; i < numHosts; ++i)
+        {
+            double weight = 0;
+            if (!childrens[i]) //if not my child, skip
+            {
+                continue;
+            }
+            //else
+            //calculate the weight W_(u,w) eq. 7 page 6.
+            //W_(u,w) = W_(child, self)
+
+            weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergy(hostId, senderHost)/*TODO -otherThing() */;
+            if (weight > maximalWeight)
+            {
+                maximalWeight = weight;
+                maximallWeightId = i;
+            }
+        }
+    }
+    else // that is got dct(1,u) a paired message
+    {
+        for (int i = 0; i < numHosts; ++i)
+        {
+            double weight = 0;
+            if (!childrens[i]) //if not my child, skip
+            {
+                continue;
+            }
+            //else
+            //calculate the weight W_(u,w) eq. 7 page 6.
+            //W_(u,w) = W_(child, self)
+
+            weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergy(hostId, senderHost) /*TODO -otherMIMOs() */;
+            if (weight > maximalWeight)
+            {
+                maximalWeight = weight;
+                maximallWeightId = i;
+            }
+        }
+    }
+
+    if (maximalWeight > 0)
+    {
+        int w = maximallWeightId;   // that is the best node to paired with
+        int u = hostId;             // that is me, self.
+        if (w != hostId)
+        {
+            sendPTS(w);
+            setPartner(w);
+        }
+        // for-loop send other children dct(1,w), that is I've a partner that is w
+        for (int i = 0; i < numHosts; ++i)
+        {
+
+            if (!childrens[i] or i == w) //if not my child, skip
+            {
+                continue;
+            }
+            if (w == hostId)
+            {
+                continue;
+            }
+            //else
+            sendDCT(i, 1, w);
+
+        }
+    }
+    else //no one of children is a good pair, that is not improving the energy costs
+    {
+        // for-loop send children dct(0.0), that is I don't have a partner
+        for (int i = 0; i < numHosts; ++i)
+        {
+
+            if (!childrens[i]) //if not my child, skip
+            {
+                continue;
+            }
+            if (i == hostId)
+            {
+                continue;
+            }
+            //else
+            sendDCT(i, 0, 0);
+
+        }
+    }
+
+}
+void    Host::sendPTS(int targetHost)
+{
+    double maxRange = getParentModule()->par("maxRange");
+    simtime_t _duration;
+
+    // generate packet and schedule timer when it ends
+    double hostX = hosts[targetHost]->par("x").doubleValue();
+    double hostY = hosts[targetHost]->par("y").doubleValue();
+    double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
+
+
+    radioDelay = dist / propagationSpeed;
+
+    char pkname[40];
+    sprintf(pkname, "PartnerSelect-%03d-pts(%03d,%03d)", hostId, targetHost, hostId);
+
+    EV << "generating packet " << pkname << endl;
+
+    state = TRANSMIT;
+    emit(stateSignal, state);
+
+    cPacket *pk = new cPacket(pkname);
+    char parPower[40] = {0};
+
+
+    pk->setBitLength(pkLenBits->intValue());
+    simtime_t duration = pk->getBitLength() / txRate;
+    pk->setKind(6);
+
+    sendDirect(pk, radioDelay, duration, hosts[targetHost]->gate("in"));
+
+
+    // let visualization code know about the new packet
+    if (transmissionRing != nullptr)
+    {
+        delete lastPacket;
+        lastPacket = pk->dup();
+    }
+}
+void    Host::setPartner(int targetHost)
+{
+    myPartnerId = targetHost;
+}
+double  Host::getEnergy(int v, int u)
+{
+    Host *host_v = check_and_cast<Host *>(hosts[v]);
+    return std::pow(host_v->distHosts[u],2);
+}
+void Host::sendDCT(int targetHost, bool paired, int hostId)
+{
+    double maxRange = getParentModule()->par("maxRange");
+    simtime_t _duration;
+
+    // generate packet and schedule timer when it ends
+    double hostX = hosts[targetHost]->par("x").doubleValue();
+    double hostY = hosts[targetHost]->par("y").doubleValue();
+    double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
+
+
+    radioDelay = dist / propagationSpeed;
+
+    char pkname[40];
+    sprintf(pkname, "Detection-%03d-dct(%01d,%03d)", this->hostId, paired, hostId);
+
+    EV << "generating packet " << pkname << endl;
+
+    state = TRANSMIT;
+    emit(stateSignal, state);
+
+    cPacket *pk = new cPacket(pkname);
+    char parPower[40] = {0};
+
+
+    pk->setBitLength(pkLenBits->intValue());
+    simtime_t duration = pk->getBitLength() / txRate;
+    pk->setKind(5);
+
+    sendDirect(pk, radioDelay, duration, hosts[targetHost]->gate("in"));
+
+
+    // let visualization code know about the new packet
+    if (transmissionRing != nullptr)
+    {
+        delete lastPacket;
+        lastPacket = pk->dup();
+    }
 }
 
 }; //namespace

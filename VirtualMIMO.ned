@@ -12,7 +12,7 @@
 // The Aloha network consists of hosts which talk to the central "server" via
 // the Aloha or Slotted Aloha protocol
 //
-network Aloha
+network VirtualMIMO
 {
     parameters:
         int numHosts;  // number of hosts
@@ -35,7 +35,7 @@ network Aloha
         double txConsumption @unit(mW) = default(47.8mW);
         double rxConsumption @unit(mW) = default(69.8mW);
         double synConsumption @unit(mW) = default(50mW);
-        
+        double gamma = default(0.1);
         @display("bgi=background/terrain,s;bgb=1000,1000");
     submodules:
         server: Server;

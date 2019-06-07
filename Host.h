@@ -21,9 +21,13 @@ namespace aloha {
  */
 class Host : public cSimpleModule
 {
+public:
+    double  *distHosts;
+
   private:
     // parameters
     simtime_t radioDelay;
+    int hostId;
     double txRate;
     cPar *iaTime;
     cPar *pkLenBits;
@@ -34,6 +38,7 @@ class Host : public cSimpleModule
     // state variables, event pointers etc
     cModule *server;
     cModule **hosts;
+
 
     cMessage *endTxEvent;
     enum { IDLE = 0, TRANSMIT = 1 } state;
@@ -58,20 +63,30 @@ class Host : public cSimpleModule
     mutable cRingFigure *transmissionRing = nullptr; // shows the last packet
     mutable std::vector<cOvalFigure *> transmissionCircles; // ripples inside the packet ring
     //algorithms
-    double  *distHosts;
+
     double  *shortestPath;
+    double  shortestPathDistance;
     int     *throughPath;
     double *energyHosts;
     bool *neighborSet;
+    bool *childrens;
+    int     myPartnerId = -1;
+    int     myParent = -1;
   public:
     Host();
     virtual ~Host();
 
   protected:
-    virtual void initialize() override;
-    virtual void handleMessage(cMessage *msg) override;
-    virtual void refreshDisplay() const override;
-    double calculateEnergeyConsumptionPerBit(double x, double y,int numTx, int numRx ,int bitsCount);
+    virtual void    initialize() override;
+    virtual void    handleMessage(cMessage *msg) override;
+    virtual void    refreshDisplay() const override;
+    void            sendDCT(int targetHost, bool paired, int hostId);
+    void            sendPTS(int targetHost);
+    void            setPartner(int targetHost);
+    void            recvDCT(cMessage* msg);
+    void            recvPTS(cMessage* msg);
+    double          getEnergy(int v, int u);
+    double calculateEnergeyConsumptionPerBit(double x, double y, int numTx, int numRx ,int bitsCount);
     simtime_t getNextTransmissionTime();
 };
 
