@@ -59,7 +59,7 @@ void Host::initialize()
     }
 
     txRate = par("txRate");
-    iaTime = &par("iaTime");
+    //iaTime = &par("iaTime");
     pkLenBits = &par("pkLenBits");
 
     slotTime = par("slotTime");
