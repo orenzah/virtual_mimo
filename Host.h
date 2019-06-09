@@ -36,7 +36,7 @@ public:
 
 
     // state variables, event pointers etc
-    cModule *server;
+    //cModule *server;
     cModule **hosts;
 
 
@@ -80,6 +80,15 @@ public:
     double  tp2     = INFINITY;
     int     pnum    = 2;
 
+    void gotBellmanFord(omnetpp::cMessage* msg);
+    void initTxProcess();
+    void initBellmanFordProcess();
+    void initFamilyProcess();
+    void calculateRadioDelay(int i);
+    void initDetectionPhase();
+    void handleLocationMessage(omnetpp::cMessage* msg);
+    void handleBellmanFordMessage(omnetpp::cMessage* msg);
+
   public:
     Host();
     virtual ~Host();
@@ -90,12 +99,23 @@ public:
     virtual void    refreshDisplay() const override;
     void            sendDCT(int targetHost, bool paired, int hostId);   // detection message
     void            sendPTS(int targetHost);                            // partner-selection message
-    void            sendRTD(int targetHost, double pc1, double pc2);                            // route-discovery message
+    void            sendRTD(int targetHost, double pc1, double pc2);    // route-discovery message
     void            setPartner(int targetHost);
+    void            setChild(cMessage* msg);
     void            recvDCT(cMessage* msg);
     void            recvPTS(cMessage* msg);
     void            recvRTD(cMessage* msg);
     double          getEnergy(int v, int u);
+
+    double          getPath_1_Energy(); // path1 = u --> v  --> ... --> z
+    double          getPath_2_Energy(); // path2 = u --> w --> v --> ... --> z
+    double          getPath_3_Energy(); // path3 = u --> t  --> ... --> z
+    double          getPath_4_Energy(); // path4 = u --> w  --> t --> ... --> z
+    double          getPath_5_Energy(); // path5 = u --> {v, t} --> ... --> z
+    double          getPath_6_Energy(); // path6 = u --> {u, w} --> v --> ... --> z
+    double          getPath_7_Energy(); // path7 = u --> {u, w} --> t --> ... --> z
+    double          getPath_8_Energy(); // path8 = u --> {u, w} --> {v, t} --> ... --> z
+
     double calculateEnergeyConsumptionPerBit(double x, double y, int numTx, int numRx ,int bitsCount);
     simtime_t getNextTransmissionTime();
 };
