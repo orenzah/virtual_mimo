@@ -37,6 +37,7 @@ network VirtualMIMO
         double synConsumption @unit(mW) = default(50mW);
         double gamma = default(0.1);
         @display("bgi=background/terrain,s;bgb=1000,1000");
+        
     submodules:
         //server: Server;
         host[numHosts]: Host {

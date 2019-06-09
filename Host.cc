@@ -48,6 +48,7 @@ void Host::initialize()
     {
         char text[10] = {0};
         shortestPath[i] = INFINITY;
+        energyHosts[i]  = INFINITY;
 
 
         sprintf(text, "host[%d]", i);
@@ -105,6 +106,10 @@ void Host::initialize()
         {
             cMessage *msg = new cMessage("initDetection");
             scheduleAt(4, msg);
+        }
+        {
+            cMessage *msg = new cMessage("init_vMER");
+            scheduleAt(6, msg);
         }
     }
 
@@ -214,7 +219,8 @@ void Host::initFamilyProcess() {
         }
     }
     //found my papa, now set myParent
-    myParent = i;
+
+    myParentId = i;
     cout << "Distance: " << min << endl;
     cout << "Telling parent I'm its children #" << i << endl;
     // generate packet and schedule timer when it ends
@@ -255,6 +261,21 @@ void Host::initDetectionPhase()
         sendDCT(i, 0, 0);
     }
 }
+void Host::init_vMER_algo()
+{
+    int numHosts = getParentModule()->par("numHosts");
+    for (int i = 0; i < numHosts; ++i)
+    {
+        if (!childrens[i])
+            continue;
+
+        if (i == hostId)
+        {
+            continue;
+        }
+        sendRTD(i, 0, INFINITY);
+    }
+}
 
 void Host::handleLocationMessage(cMessage* msg)
 {
@@ -268,18 +289,18 @@ void Host::handleLocationMessage(cMessage* msg)
         double hostX = hosts[i]->par("x").doubleValue();
         double hostY = hosts[i]->par("y").doubleValue();
         double maxRange = getParentModule()->par("maxRange");
-        if (distHosts[i] <= maxRange && getId() != hosts[i]->getId()) {
+        if (distHosts[i] <= maxRange && getId() != hosts[i]->getId())
+        {
             neighborSet[i] = true;
-            energyHosts[i] = calculateEnergeyConsumptionPerBit(hostX, hostY, 0,
-                    0, pkt->getBitLength());
             //energyHosts[i] = 1;
-        } else {
+        }
+        else
+        {
             neighborSet[i] = false;
-            energyHosts[i] = INFINITY;
         }
         for (int i = 0; i < numHosts; ++i)
         {
-        EV << "Host " << i << ": distance:" << distHosts[i] << "   energy:" << energyHosts[i] << "   neighbor?  " << neighborSet[i] << "   " << endl;
+            EV << "Host " << i << ": distance:" << distHosts[i]  << "   neighbor?  " << neighborSet[i] << "   " << endl;
         }
     }
 }
@@ -358,6 +379,10 @@ void Host::handleMessage(cMessage *msg)
         else if (strcmp(msg->getName(), "initDetection") == 0)
         {
             initDetectionPhase();
+        }
+        else if (strcmp(msg->getName(), "init_vMER") == 0)
+        {
+            init_vMER_algo();
         }
     }
     else    //message from the outside
@@ -516,28 +541,71 @@ void Host::refreshDisplay() const
         getDisplayString().setTagArg("t", 0, "TRANSMIT");
     }
 }
-double Host::calculateEnergeyConsumptionPerBit(double x, double y,int numTx, int numRx ,int bitsCount)
+double Host::calculateEnergyConsumptionPerBit(int _w, int _v,  int _t, int numTx, int numRx ,int bitsCount)
 {
     //TODO
-    /*
+
     double energyPerBit = 0;
     double constSize = getParentModule()->par("constellation").doubleValue();
     double epsilon = 3*(std::sqrt(std::pow(2,constSize))-1)/(std::sqrt(std::pow(2,constSize))+1);
     double pBitError = getParentModule()->par("bitErrorProbability").doubleValue();
-
-    double spectralDensity = getParentModule()->par("noiseSpectralDensity").doubleValue();
+    double gain = std::pow(10,getParentModule()->par("rxtxGain").doubleValue()/10);
+    double lambda = getParentModule()->par("waveLength").doubleValue();
+    double spectralDensity = std::pow(10,(getParentModule()->par("noiseSpectralDensity").doubleValue()-30)/10);
     double alpha = (epsilon / 0.35) - 1;
+    double Ml = std::pow(10,getParentModule()->par("linkMargin").doubleValue()/10);
+    double NF = std::pow(10,getParentModule()->par("rxNoiseFigure").doubleValue()/10);
 
-    energyPerBit = (2.0/3.0)*(1 + alpha) * std::pow(pBitError / 4 , -(1/(numTx*numRx)))*((std::pow(2,constSize) - 1)/(std::pow(constSize, (1/(numTx*numRx+1)))))*spectralDensity;
+    double Ptc = getParentModule()->par("txConsumption").doubleValue();
+    double Psyn = getParentModule()->par("synConsumption").doubleValue();
+    double Prc = getParentModule()->par("rxConsumption").doubleValue();
+
+    double BW = getParentModule()->par("bandWidth").doubleValue();
+
+    double systemEnergy=0;
+    systemEnergy = ((numTx*Ptc)+(2*Psyn)+(numRx*Prc))/(BW*constSize);
+
+    int _u = this->hostId;
+    Host *w = check_and_cast<Host *>(hosts[this->myPartnerId]);
+    Host *v = check_and_cast<Host *>(hosts[_v]);
+    Host *t = check_and_cast<Host *>(hosts[_t]);
+    Host *u = check_and_cast<Host *>(hosts[_u]);
+
     double dSum = 0;
-    for (int i = 1;i < numTx; ++i)pairedId
+    if (numTx == 2)
     {
-        for (int j = 1;j < numRx; ++j)
+        if (numRx == 2) //MIMO
         {
-            //dSum += (4*PI * )
+            //u,w to v,t
+            dSum = std::pow(u->distHosts[v->hostId],2) +  std::pow(u->distHosts[t->hostId],2) + std::pow(w->distHosts[v->hostId],2) + std::pow(w->distHosts[t->hostId],2);
+            //energyPerBit = ?;
+        }
+        else    //MISO
+        {
+            //u,v to t
+            //d_ut^2 + d_vt^2
+            dSum =  std::pow(u->distHosts[t->hostId],2) + std::pow(v->distHosts[t->hostId],2);
         }
     }
-    */
+    else
+    {
+        if (numRx == 2)   //SIMO
+        {
+            //u to v,t
+            //d_uv^2 + d_ut^2
+            dSum =  std::pow(u->distHosts[v->hostId],2) + std::pow(u->distHosts[t->hostId],2);
+        }
+        else    //SISO
+        {
+            //u to v
+            dSum =  std::pow(u->distHosts[v->hostId],2);
+        }
+    }
+    dSum = (dSum*Ml*NF)/(gain*std::pow(lambda,2));
+
+    energyPerBit = (2.0/3.0)*(1 + alpha) * std::pow(pBitError / 4 , -(1/(numTx*numRx)))*((std::pow(2,constSize) - 1)/(std::pow(constSize, (1/(numTx*numRx+1)))))*spectralDensity*dSum + systemEnergy;
+
+
     return (((this->x-x) * (this->x-x) + (this->y-y) * (this->y-y)));
 }
 void Host::recvPTS(cMessage* msg)
@@ -581,6 +649,7 @@ void Host::recvDCT(cMessage* msg)
     sscanf(messageText, "%*10s%03d", &senderHost);
     sscanf(messageText, "%*18s%1d", &isPaired);
     sscanf(messageText, "%*20s%03d", &pairedId);
+
     double gamma = getParentModule()->par("gamma");
     double maximalWeight = -INFINITY;
     int maximallWeightId = -1;
@@ -608,6 +677,7 @@ void Host::recvDCT(cMessage* msg)
     }
     else // that is got dct(1,u) a paired message
     {
+        myParentsPartnerId = pairedId;
         for (int i = 0; i < numHosts; ++i)
         {
             double weight = 0;
@@ -773,6 +843,7 @@ void Host::recvRTD(cMessage* msg)
     sscanf(messageText, "%*23s%03d", &senderHost);
     sscanf(messageText, "%*27s%012.5lf", &energyPC1);
     sscanf(messageText, "%*40s%012.5lf", &energyPC2);
+    double energy_path0;
     if (energyPC2 == INFINITY)
     {
         // the parent node v has no partner
@@ -784,11 +855,17 @@ void Host::recvRTD(cMessage* msg)
         }
         else
         {
-            double energy_path0;
+            double energy_path1 = getPath_1_Energy(energyPC1);
+            double energy_path2 = getPath_2_Energy(energyPC1);
+            double energy_path3 = getPath_6_Energy(energyPC1);
+
             // node u has a partner: denoted by w
             // TODO calculate three paths cases
             // TODO select the minimum path energy
-            tp2 = energyPC1 + energy_path0;
+
+            energy_path0 = std::min(energy_path1, energy_path2);
+            energy_path0 = std::min(energy_path0, energy_path3);
+            tp2 = energyPC1 + getEnergyToParentMISO();
         }
     }
     else
@@ -796,8 +873,9 @@ void Host::recvRTD(cMessage* msg)
         // the parent node v has partner: denoted {v, t}
         pnum--;
         double maxRange = getParentModule()->par("maxRange");
-
-        if (distHosts[0/*t*/] > maxRange)
+        Host* v = check_and_cast<Host *>(hosts[this->myParentId]);
+        int t = v->myPartnerId;
+        if (distHosts[t] > maxRange)
         {
             // node u will not receive message from v
             pnum = 0;
@@ -806,18 +884,35 @@ void Host::recvRTD(cMessage* msg)
         {
             // node u has no partner
             // TODO calculate path1 and path2
+            double energy_path1 = getPath_1_Energy(energyPC1);
+            double energy_path2 = getPath_5_Energy(energyPC2);
+            energy_path0 = std::min(energy_path1, energy_path2);
             // TODO select the minimum path energy as path0
         }
         else
         {
+            double energy_path1 = getPath_1_Energy(energyPC1);
+            double energy_path2 = getPath_2_Energy(energyPC1);
+            double energy_path3 = getPath_6_Energy(energyPC1);
+            double energy_path4 = getPath_5_Energy(energyPC2);
+            double energy_path5 = getPath_8_Energy(energyPC2);
             // node u has a partner: denoted by w
             // TODO calculate five paths cases
             // TODO select the minimum path energy as path0
             // tp2 = min{energyPC1 + path0, energyPC2 + path0, tp2} TODO
+
+            energy_path0 = std::min(energy_path1,energy_path2);
+            energy_path0 = std::min(energy_path0,energy_path3);
+            energy_path0 = std::min(energy_path0,energy_path4);
+            energy_path0 = std::min(energy_path0,energy_path5);
+            double temp = INFINITY;
+            temp = std::min(energyPC1 + getEnergyToParentMISO(), energyPC2 + getEnergyToParentMIMO());
+            tp2 = std::min(temp, tp2);
         }
         if (pnum == 0)
         {
             // tp1 = energy of path0 TODO
+            tp1 = energy_path0;
             // for-loop to send message to connected nodes
             for (int i = 0; i < numHosts; ++i)
             {
@@ -870,7 +965,7 @@ void Host::sendRTD(int targetHost, double pc1, double pc2)
 
     pk->setBitLength(pkLenBits->intValue());
     simtime_t duration = pk->getBitLength() / txRate;
-    pk->setKind(5);
+    pk->setKind(7);
 
     sendDirect(pk, radioDelay, duration, hosts[targetHost]->gate("in"));
 
@@ -883,36 +978,125 @@ void Host::sendRTD(int targetHost, double pc1, double pc2)
     }
 }
 
-double          Host::getPath_1_Energy()
+double Host::getPath_1_Energy(double pc1)
 {
-
+    if (this->myParentId != -1)
+    {
+        return pc1 + getEnergyToParentSISO();
+    }
+    else
+    {
+        return INFINITY;
+    }
 }
-double          Host::getPath_2_Energy()
+double Host::getPath_2_Energy(double pc1)
 {
-
+    if (this->myPartnerId != -1)
+    {
+        Host *myPartner = check_and_cast<Host *>(hosts[this->myPartnerId]);
+        return pc1 + this->getEnergyToPartnerSISO() + myPartner->getEnergyToParentsParentSISO();
+    }
+    else
+    {
+        return INFINITY;
+    }
 }
-double          Host::getPath_3_Energy()
+double Host::getPath_3_Energy(double pc1)
 {
-
+    if (this->myParentsPartnerId != -1 )
+    {
+        Host *t = check_and_cast<Host *>(hosts[myParentsPartnerId]);
+        return pc1 + t->getEnergyToParentSISO() + this->getEnergyToParentsPartnerSISO();
+    }
+    else
+    {
+        return INFINITY;
+    }
 }
-double          Host::getPath_4_Energy()
+double Host::getPath_4_Energy(double pc1)
 {
-
+    if (this->myPartnerId != -1 )
+    {
+        Host *t = check_and_cast<Host *>(hosts[myParentsPartnerId]);
+        Host *w = check_and_cast<Host *>(hosts[myPartnerId]);
+        return pc1 + t->getEnergyToParentSISO() + this->getEnergyToPartnerSISO() + w->getEnergyToParentsParentsPartnerSISO();
+    }
+    else
+    {
+        return INFINITY;
+    }
 }
-double          Host::getPath_5_Energy()
+double Host::getPath_5_Energy(double pc2)
 {
-
+    return this->getEnergyToParentSIMO() + pc2;
 }
-double          Host::getPath_6_Energy()
+double Host::getPath_6_Energy(double pc1)
 {
-
+    return this->getEnergyToPartnerSISO() + this->getEnergyToParentMISO() + pc1;
 }
-double          Host::getPath_7_Energy()
+double Host::getPath_7_Energy(double pc1)
 {
-
+    Host *v = check_and_cast<Host *>(hosts[this->myParentId]);
+    Host *t = check_and_cast<Host *>(hosts[v->myPartnerId]);
+    return this->getEnergyToPartnerSISO() + this->getEnergyToParentsPartnerMISO() + pc1 + t->getEnergyToParentSISO();
 }
-double          Host::getPath_8_Energy()
+double Host::getPath_8_Energy(double pc2)
 {
-
+    return this->getEnergyToPartnerSISO() + this->getEnergyToParentMIMO() + pc2;
+}
+double Host::getEnergyToParentSISO()
+{
+    return calculateEnergyConsumptionPerBit(0, this->myParentId, 0, 1, 1, 1);
+}
+double Host::getEnergyToParentsParentSISO()
+{
+    Host *v = check_and_cast<Host *>(hosts[this->myParentId]);
+    return calculateEnergyConsumptionPerBit(0, v->myParentId, 0, 1, 1, 1);
+}
+double Host::getEnergyToParentsPartnerSISO()
+{
+    Host *v = check_and_cast<Host *>(hosts[this->myParentId]);
+    if (v->myPartnerId == -1)
+        return INFINITY;
+    return calculateEnergyConsumptionPerBit(0, v->myPartnerId, 0, 1, 1, 1);
+}
+double Host::getEnergyToPartnerSISO()
+{
+    if (this->myPartnerId == -1)
+        return INFINITY;
+    return calculateEnergyConsumptionPerBit(0, this->myPartnerId, 0, 1, 1, 1);
+}
+double Host::getEnergyToParentsParentsPartnerSISO()
+{
+    Host *v = check_and_cast<Host *>(hosts[this->myParentId]);
+    Host *_v = check_and_cast<Host *>(hosts[v->myParentId]);
+    if (v->myPartnerId == -1)
+        return INFINITY;
+    return calculateEnergyConsumptionPerBit(_v->myPartnerId, 0, 0, 1, 1, 1);
+}
+double Host::getEnergyToParentSIMO()
+{
+    Host *v = check_and_cast<Host *>(hosts[this->myParentId]);
+    if (v->myPartnerId == -1)
+        return INFINITY;
+    return calculateEnergyConsumptionPerBit(0 ,this->myParentId, v->myPartnerId, 1, 2, 1);
+}
+double Host::getEnergyToParentMISO()
+{
+    return calculateEnergyConsumptionPerBit(this->myPartnerId, this->myParentId, 0, 2, 1, 1);
+}
+double Host::getEnergyToParentsPartnerMISO()
+{
+    Host *v = check_and_cast<Host *>(hosts[this->myParentId]);
+    if (v->myPartnerId == -1)
+        return INFINITY;
+    return calculateEnergyConsumptionPerBit(this->myPartnerId, 0,v->myPartnerId, 2, 1, 1);
+}
+double Host::getEnergyToParentMIMO()
+{
+    Host *v = check_and_cast<Host *>(hosts[this->myParentId]);
+    if (v->myPartnerId == -1)
+        return INFINITY;
+    return calculateEnergyConsumptionPerBit(this->myPartnerId, this->myParentId, v->myPartnerId, 2, 2, 1);
 }
 }; //namespace

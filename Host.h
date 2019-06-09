@@ -70,8 +70,11 @@ public:
     double *energyHosts;
     bool *neighborSet;
     bool *childrens;
+
+
     int     myPartnerId = -1;
-    int     myParent = -1;
+    int     myParentId = -1;
+    int     myParentsPartnerId = -1;  //My parent's partner ID
     double energyAloneToBase;
     double energyPairedToBase;
 
@@ -86,10 +89,22 @@ public:
     void initFamilyProcess();
     void calculateRadioDelay(int i);
     void initDetectionPhase();
+    void init_vMER_algo();
     void handleLocationMessage(omnetpp::cMessage* msg);
     void handleBellmanFordMessage(omnetpp::cMessage* msg);
 
   public:
+    double getEnergyToParentSISO();
+    double getEnergyToParentsParentSISO();
+    double getEnergyToParentsPartnerSISO();
+    double getEnergyToParentsParentsPartnerSISO();
+    double getEnergyToPartnerSISO();
+    double getEnergyToParentSIMO();
+    double getEnergyToParentMISO();
+    double getEnergyToParentsPartnerMISO();
+    double getEnergyToParentMIMO();
+
+
     Host();
     virtual ~Host();
 
@@ -107,16 +122,17 @@ public:
     void            recvRTD(cMessage* msg);
     double          getEnergy(int v, int u);
 
-    double          getPath_1_Energy(); // path1 = u --> v  --> ... --> z
-    double          getPath_2_Energy(); // path2 = u --> w --> v --> ... --> z
-    double          getPath_3_Energy(); // path3 = u --> t  --> ... --> z
-    double          getPath_4_Energy(); // path4 = u --> w  --> t --> ... --> z
-    double          getPath_5_Energy(); // path5 = u --> {v, t} --> ... --> z
-    double          getPath_6_Energy(); // path6 = u --> {u, w} --> v --> ... --> z
-    double          getPath_7_Energy(); // path7 = u --> {u, w} --> t --> ... --> z
-    double          getPath_8_Energy(); // path8 = u --> {u, w} --> {v, t} --> ... --> z
+    double          getPath_1_Energy(double pc1); // path1 = u --> v  --> ... --> z
+    double          getPath_2_Energy(double pc1); // path2 = u --> w --> v --> ... --> z
+    double          getPath_3_Energy(double pc1); // path3 = u --> t  --> ... --> z
+    double          getPath_4_Energy(double pc1); // path4 = u --> w  --> t --> ... --> z
+    double          getPath_5_Energy(double pc2); // path5 = u --> {v, t} --> ... --> z
+    double          getPath_6_Energy(double pc1); // path6 = u --> {u, w} --> v --> ... --> z
+    double          getPath_7_Energy(double pc1); // path7 = u --> {u, w} --> t --> ... --> z
+    double          getPath_8_Energy(double pc2); // path8 = u --> {u, w} --> {v, t} --> ... --> z
 
-    double calculateEnergeyConsumptionPerBit(double x, double y, int numTx, int numRx ,int bitsCount);
+    double calculateEnergyConsumptionPerBit(int _v, int _w, int _t, int numTx, int numRx ,int bitsCount);
+
     simtime_t getNextTransmissionTime();
 };
 
