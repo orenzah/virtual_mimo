@@ -38,7 +38,7 @@ network VirtualMIMO
         double gamma = default(0.1);
         @display("bgi=background/terrain,s;bgb=1000,1000");
     submodules:
-        server: Server;
+        //server: Server;
         host[numHosts]: Host {
             txRate = txRate;
             slotTime = slotTime;
