@@ -72,6 +72,14 @@ public:
     bool *childrens;
     int     myPartnerId = -1;
     int     myParent = -1;
+    double energyAloneToBase;
+    double energyPairedToBase;
+
+    /*  region vMER params  */
+    double  tp1;
+    double  tp2     = INFINITY;
+    int     pnum    = 2;
+
   public:
     Host();
     virtual ~Host();
@@ -80,11 +88,13 @@ public:
     virtual void    initialize() override;
     virtual void    handleMessage(cMessage *msg) override;
     virtual void    refreshDisplay() const override;
-    void            sendDCT(int targetHost, bool paired, int hostId);
-    void            sendPTS(int targetHost);
+    void            sendDCT(int targetHost, bool paired, int hostId);   // detection message
+    void            sendPTS(int targetHost);                            // partner-selection message
+    void            sendRTD(int targetHost, double pc1, double pc2);                            // route-discovery message
     void            setPartner(int targetHost);
     void            recvDCT(cMessage* msg);
     void            recvPTS(cMessage* msg);
+    void            recvRTD(cMessage* msg);
     double          getEnergy(int v, int u);
     double calculateEnergeyConsumptionPerBit(double x, double y, int numTx, int numRx ,int bitsCount);
     simtime_t getNextTransmissionTime();

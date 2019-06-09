@@ -13,7 +13,7 @@
 #include <string.h>
 using namespace std;
 namespace aloha {
-#define INFINITY (1e999)
+#define INFINITY 1e999
 Define_Module(Host);
 
 Host::Host()
@@ -416,6 +416,10 @@ void Host::handleMessage(cMessage *msg)
         {
             recvPTS(msg);
         }
+        else if (msg->getKind() == 7)
+        {
+            recvRTD(msg);
+        }
 
     }
 }
@@ -559,7 +563,7 @@ double Host::calculateEnergeyConsumptionPerBit(double x, double y,int numTx, int
 
     energyPerBit = (2.0/3.0)*(1 + alpha) * std::pow(pBitError / 4 , -(1/(numTx*numRx)))*((std::pow(2,constSize) - 1)/(std::pow(constSize, (1/(numTx*numRx+1)))))*spectralDensity;
     double dSum = 0;
-    for (int i = 1;i < numTx; ++i)
+    for (int i = 1;i < numTx; ++i)pairedId
     {
         for (int j = 1;j < numRx; ++j)
         {
@@ -775,6 +779,125 @@ void Host::sendDCT(int targetHost, bool paired, int hostId)
 
     cPacket *pk = new cPacket(pkname);
     char parPower[40] = {0};
+
+
+    pk->setBitLength(pkLenBits->intValue());
+    simtime_t duration = pk->getBitLength() / txRate;
+    pk->setKind(5);
+
+    sendDirect(pk, radioDelay, duration, hosts[targetHost]->gate("in"));
+
+
+    // let visualization code know about the new packet
+    if (transmissionRing != nullptr)
+    {
+        delete lastPacket;pairedId
+        lastPacket = pk->dup();
+    }
+}
+void Host::recvRTD(cMessage* msg)
+{
+    const char *messageText = msg->getName();
+    int numHosts = getParentModule()->par("numHosts");
+    //RouteDiscovery-000-rtd(000,000000.10000,000000.10000)
+    int senderHost = 0;
+    double energyPC1 = 0; //pc1 as refered at vMER algorithm
+    double energyPC2 = 0; //pc2 as refered at vMER algorithm
+    sscanf(messageText, "%*23s%03d", &senderHost);
+    sscanf(messageText, "%*27s%012.5lf", &energyPC1);
+    sscanf(messageText, "%*40s%012.5lf", &energyPC2);
+    if (energyPC2 == INFINITY)
+    {
+        // the parent node v has no partner
+        pnum = 0;
+        if (myPartnerId == -1)
+        {
+            // node u has no partner
+            // TODO add this link to route
+        }
+        else
+        {
+            double energy_path0;
+            // node u has a partner: denoted by w
+            // TODO calculate three paths cases
+            // TODO select the minimum path energy
+            tp2 = energyPC1 + energy_path0;
+        }
+    }
+    else
+    {
+        // the parent node v has partner: denoted {v, t}
+        pnum--;
+        double maxRange = getParentModule()->par("maxRange");
+        if (distHosts[t] > maxRange)
+        {
+            // node u will not receive message from v
+            pnum = 0;
+        }
+        if (myPartnerId == -1)
+        {
+            // node u has no partner
+            // TODO calculate path1 and path2
+            // TODO select the minimum path energy as path0
+        }
+        else
+        {
+            // node u has a partner: denoted by w
+            // TODO calculate five paths cases
+            // TODO select the minimum path energy as path0
+            // tp2 = min{energyPC1 + path0, energyPC2 + path0, tp2} TODO
+        }
+        if (pnum == 0)
+        {
+            // tp1 = energy of path0 TODO
+            // for-loop to send message to connected nodes
+            for (int i = 0; i < numHosts; ++i)
+            {
+
+                if (!neighborSet[i])
+                {
+                    continue;
+                }
+                sendRTD(i, tp1,tp2);
+            }
+
+        }
+    }
+}
+
+void Host::sendRTD(int targetHost)
+{
+    double maxRange = getParentModule()->par("maxRange");
+    simtime_t _duration;
+
+    // generate packet and schedule timer when it ends
+    double hostX = hosts[targetHost]->par("x").doubleValue();
+    double hostY = hosts[targetHost]->par("y").doubleValue();
+    double dist = std::sqrt((x-hostX) * (x-hostX) + (y-hostY) * (y-hostY));
+
+
+    radioDelay = dist / propagationSpeed;
+
+    char pkname[80];
+    double  energyPairedToBase;
+    if (myPartnerId > -1)
+    {
+        energyPairedToBase = this->energyPairedToBase;
+    }
+    else
+    {
+        energyPairedToBase = INFINITY;
+    }
+    sprintf(pkname, "RouteDiscovery-%03d-rtd(%03d,%012.5lf,%012.5lf)", this->hostId, this->hostId, this->energyAloneToBase, energyPairedToBase);
+
+
+    EV << "generating packet " << pkname << endl;
+
+    state = TRANSMIT;
+    emit(stateSignal, state);
+
+    cPacket *pk = new cPacket(pkname);
+
 
 
     pk->setBitLength(pkLenBits->intValue());
