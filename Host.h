@@ -33,6 +33,7 @@ public:
     cPar *pkLenBits;
     simtime_t slotTime;
     bool isSlotted;
+    cDoubleHistogram totalEnergyStats;
 
 
     // state variables, event pointers etc
@@ -70,7 +71,8 @@ public:
     double *energyHosts;
     bool *neighborSet;
     bool *childrens;
-
+    double totalEnergy = 0;
+    double totalEnergyMTD = 0;
 
     int     myPartnerId = -1;
     int     myParentId = -1;
@@ -79,9 +81,10 @@ public:
     double energyPairedToBase;
 
     /*  region vMER params  */
-    double  tp1;
+    double  tp1     = INFINITY;
     double  tp2     = INFINITY;
     int     pnum    = 2;
+    bool    rtdTerminated = 0;
 
     void gotBellmanFord(omnetpp::cMessage* msg);
     void initTxProcess();
@@ -92,6 +95,8 @@ public:
     void init_vMER_algo();
     void handleLocationMessage(omnetpp::cMessage* msg);
     void handleBellmanFordMessage(omnetpp::cMessage* msg);
+    void sendEnergy(double energy);
+    void sendEnergyMTD(double energy);
 
   public:
     double getEnergyToParentSISO();
@@ -120,6 +125,8 @@ public:
     void            recvDCT(cMessage* msg);
     void            recvPTS(cMessage* msg);
     void            recvRTD(cMessage* msg);
+    void            recvEnergy(cMessage* msg);
+    void            recvEnergyMTD(cMessage* msg);
     double          getEnergy(int v, int u);
 
     double          getPath_1_Energy(double pc1); // path1 = u --> v  --> ... --> z

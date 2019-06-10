@@ -111,12 +111,27 @@ void Host::initialize()
             cMessage *msg = new cMessage("init_vMER");
             scheduleAt(6, msg);
         }
+        {
+            cMessage *msg = new cMessage("printTotalEnergy");
+            scheduleAt(12, msg);
+        }
+
     }
 
     cMessage *msg = new cMessage("initFamily");
     scheduleAt(3, msg);
+    {
 
+        cMessage *msg = new cMessage("initEnergy");
+        scheduleAt(7, msg);
 
+    }
+    {
+
+        cMessage *msg = new cMessage("initEnergyMTD");
+        scheduleAt(10, msg);
+
+    }
     //scheduleAt(getNextTransmissionTime(), endTxEvent);
 }
 
@@ -209,17 +224,28 @@ void Host::initBellmanFordProcess() {
 
 void Host::initFamilyProcess() {
     int numHosts = getParentModule()->par("numHosts");
+    double maxRange = getParentModule()->par("maxRange");
     simtime_t _duration;
     int i = -1;
     double min = INFINITY;
-    for (int j = 0; j < numHosts; ++j) {
-        if (shortestPath[j] == shortestPathDistance) {
+    for (int j = 0; j < numHosts; ++j)
+    {
+        if (shortestPath[j] == shortestPathDistance)
+        {
             //min = shortestPath[j];
             i = j;
         }
     }
     //found my papa, now set myParent
-
+    if (i == hostId)
+    {
+        return;
+    }
+    if (distHosts[i] > maxRange)
+    {
+        myParentId = -1;
+        return;
+    }
     myParentId = i;
     cout << "Distance: " << min << endl;
     cout << "Telling parent I'm its children #" << i << endl;
@@ -358,6 +384,60 @@ void Host::handleBellmanFordMessage(cMessage* msg)
     }
 }
 
+void Host::sendEnergy(double energy)
+{
+    double maxRange = getParentModule()->par("maxRange");
+    simtime_t _duration;
+    // generate packet and schedule timer when it ends
+    double hostX = hosts[this->myParentId]->par("x").doubleValue();
+    double hostY = hosts[this->myParentId]->par("y").doubleValue();
+    double dist = std::sqrt(
+            (x - hostX) * (x - hostX) + (y - hostY) * (y - hostY));
+    radioDelay = dist / propagationSpeed;
+    char pkname[90];
+    sprintf(pkname, "EnergyToRoot-%03d-%042.38lf", this->hostId, energy);
+    EV  << "generating packet " << pkname << endl;
+    state = TRANSMIT;
+    emit(stateSignal, state);
+    cPacket* pk = new cPacket(pkname);
+    char parPower[40] = { 0 };
+    pk->setBitLength(pkLenBits->intValue());
+    simtime_t duration = pk->getBitLength() / txRate;
+    pk->setKind(8);
+    sendDirect(pk, radioDelay, duration, hosts[myParentId]->gate("in"));
+    // let visualization code know about the new packet
+    if (transmissionRing != nullptr) {
+        delete lastPacket;
+        lastPacket = pk->dup();
+    }
+}
+void Host::sendEnergyMTD(double energy)
+{
+    double maxRange = getParentModule()->par("maxRange");
+    simtime_t _duration;
+    // generate packet and schedule timer when it ends
+    double hostX = hosts[this->myParentId]->par("x").doubleValue();
+    double hostY = hosts[this->myParentId]->par("y").doubleValue();
+    double dist = std::sqrt(
+            (x - hostX) * (x - hostX) + (y - hostY) * (y - hostY));
+    radioDelay = dist / propagationSpeed;
+    char pkname[90];
+    sprintf(pkname, "EnergyToRootMTD-%03d-%042.38lf", this->hostId, energy);
+    EV  << "generating packet " << pkname << endl;
+    state = TRANSMIT;
+    emit(stateSignal, state);
+    cPacket* pk = new cPacket(pkname);
+    char parPower[40] = { 0 };
+    pk->setBitLength(pkLenBits->intValue());
+    simtime_t duration = pk->getBitLength() / txRate;
+    pk->setKind(9);
+    sendDirect(pk, radioDelay, duration, hosts[myParentId]->gate("in"));
+    // let visualization code know about the new packet
+    if (transmissionRing != nullptr) {
+        delete lastPacket;
+        lastPacket = pk->dup();
+    }
+}
 void Host::handleMessage(cMessage *msg)
 {
     //ASSERT(msg == endTxEvent);
@@ -383,6 +463,35 @@ void Host::handleMessage(cMessage *msg)
         else if (strcmp(msg->getName(), "init_vMER") == 0)
         {
             init_vMER_algo();
+        }
+        else if (strcmp(msg->getName(), "initEnergy") == 0)
+        {
+           if (this->myParentId != -1)
+           {
+               double energy = std::min(tp1,tp2);
+               sendEnergy(energy);
+           }
+               //cout << "host[" << hostId << "] -> BaseNode: " << temp << endl;
+        }
+        else if (strcmp(msg->getName(), "initEnergyMTD") == 0)
+        {
+           if (this->myParentId != -1)
+           {
+               double energy = getEnergyToParentSISO();
+               sendEnergyMTD(energy);
+           }
+               //cout << "host[" << hostId << "] -> BaseNode: " << temp << endl;
+        }
+        else if (strcmp(msg->getName(), "printTotalEnergy") == 0)
+        {
+            cout << totalEnergy << endl;
+            cout << totalEnergyMTD << endl;
+            simsignal_t energyMTD = getParentModule()->registerSignal("mtd_calc");
+            simsignal_t energyMIMO = getParentModule()->registerSignal("mimo_calc");
+
+            emit(energyMTD, totalEnergyMTD);
+            emit(energyMIMO, totalEnergy);
+               //cout << "host[" << hostId << "] -> BaseNode: " << temp << endl;
         }
     }
     else    //message from the outside
@@ -410,9 +519,18 @@ void Host::handleMessage(cMessage *msg)
         }
         else if (msg->getKind() == 7)
         {
+            if(rtdTerminated)
+                return;
             recvRTD(msg);
         }
-
+        else if (msg->getKind() == 8)
+        {
+            recvEnergy(msg);
+        }
+        else if (msg->getKind() == 9)
+        {
+            recvEnergyMTD(msg);
+        }
     }
 }
 
@@ -559,15 +677,25 @@ double Host::calculateEnergyConsumptionPerBit(int _w, int _v,  int _t, int numTx
     double Ptc = getParentModule()->par("txConsumption").doubleValue();
     double Psyn = getParentModule()->par("synConsumption").doubleValue();
     double Prc = getParentModule()->par("rxConsumption").doubleValue();
-
+    Ptc /= 1000;
+    Psyn /= 1000;
+    Prc /= 1000;
     double BW = getParentModule()->par("bandWidth").doubleValue();
 
     double systemEnergy=0;
     systemEnergy = ((numTx*Ptc)+(2*Psyn)+(numRx*Prc))/(BW*constSize);
-
+    Host *w;
     int _u = this->hostId;
-    Host *w = check_and_cast<Host *>(hosts[this->myPartnerId]);
-    Host *v = check_and_cast<Host *>(hosts[_v]);
+    if (this->myPartnerId != -1)
+    {
+        w = check_and_cast<Host *>(hosts[this->myPartnerId]);
+    }
+    Host *v;
+    if (_v != -1)
+    {
+        v = check_and_cast<Host *>(hosts[_v]);
+    }
+
     Host *t = check_and_cast<Host *>(hosts[_t]);
     Host *u = check_and_cast<Host *>(hosts[_u]);
 
@@ -598,15 +726,21 @@ double Host::calculateEnergyConsumptionPerBit(int _w, int _v,  int _t, int numTx
         else    //SISO
         {
             //u to v
-            dSum =  std::pow(u->distHosts[v->hostId],2);
+            if (_v == -1)
+            {
+                dSum = INFINITY;
+            }
+            else
+            {
+                dSum =  std::pow(u->distHosts[v->hostId],2);
+            }
         }
     }
     dSum = (dSum*Ml*NF)/(gain*std::pow(lambda,2));
 
     energyPerBit = (2.0/3.0)*(1 + alpha) * std::pow(pBitError / 4 , -(1/(numTx*numRx)))*((std::pow(2,constSize) - 1)/(std::pow(constSize, (1/(numTx*numRx+1)))))*spectralDensity*dSum + systemEnergy;
 
-
-    return (((this->x-x) * (this->x-x) + (this->y-y) * (this->y-y)));
+    return energyPerBit;
 }
 void Host::recvPTS(cMessage* msg)
 {
@@ -635,6 +769,56 @@ void Host::recvPTS(cMessage* msg)
         sendDCT(i, 1, senderHost);
     }
     setPartner(senderHost);
+    //Finished = true TODO
+}
+void Host::recvEnergy(cMessage* msg)
+{
+    const char *messageText = msg->getName();
+    int numHosts = getParentModule()->par("numHosts");
+    //PartnerSelect-000-pts(000,000)
+    int senderHost = 0;
+    double energy = 0;
+
+    sscanf(messageText, "%*13s%03d", &senderHost);
+    sscanf(messageText, "%*17s%lf", &energy);
+    if (this->myParentId != -1)
+    {
+        double temp = std::min(tp1,tp2);
+        if (energy + temp != INFINITY)
+            sendEnergy(energy + temp);
+    }
+    else
+    {
+        // I'm the base node
+        totalEnergy += energy;
+
+        // collect data
+    }
+    //Finished = true TODO
+}
+void Host::recvEnergyMTD(cMessage* msg)
+{
+    const char *messageText = msg->getName();
+    int numHosts = getParentModule()->par("numHosts");
+    //PartnerSelect-000-pts(000,000)
+    int senderHost = 0;
+    double energy = 0;
+
+    sscanf(messageText, "%*16s%03d", &senderHost);
+    sscanf(messageText, "%*20s%lf", &energy);
+    if (this->myParentId != -1)
+    {
+        double temp = calculateEnergyConsumptionPerBit(0, this->myParentId, 0, 1, 1, 1);
+        if (energy + temp != INFINITY)
+            sendEnergyMTD(energy + temp);
+    }
+    else
+    {
+        // I'm the base node
+        totalEnergyMTD += energy;
+
+        // collect data
+    }
     //Finished = true TODO
 }
 void Host::recvDCT(cMessage* msg)
@@ -837,19 +1021,31 @@ void Host::recvRTD(cMessage* msg)
     const char *messageText = msg->getName();
     int numHosts = getParentModule()->par("numHosts");
     //RouteDiscovery-000-rtd(000,000000.10000,000000.10000)
+    //rtd(%03d,%042.20lf,%042.20lf)
     int senderHost = 0;
     double energyPC1 = 0; //pc1 as refered at vMER algorithm
-    double energyPC2 = 0; //pc2 as refered at vMER algorithm
-    sscanf(messageText, "%*23s%03d", &senderHost);
-    sscanf(messageText, "%*27s%012.5lf", &energyPC1);
-    sscanf(messageText, "%*40s%012.5lf", &energyPC2);
-    double energy_path0;
+    double energyPC2 = INFINITY; //pc2 as refered at vMER algorithm
+    char checkInf[10] = {0};
+    sscanf(messageText, "%*4s%03d", &senderHost);
+    sscanf(messageText, "%*8s%042.38lf", &energyPC1);
+    sscanf(messageText, "%*90s%3s", &checkInf);
+    if (!strcmp(checkInf,"inf"))
+    {
+        energyPC2 = INFINITY;
+    }
+    else
+    {
+        sscanf(messageText, "%*51s%042.38lf", &energyPC2);
+    }
+
+    double energy_path0 = INFINITY;
     if (energyPC2 == INFINITY)
     {
         // the parent node v has no partner
         pnum = 0;
         if (myPartnerId == -1)
         {
+            tp2 = getEnergyToParentSISO();
             // node u has no partner
             // TODO add this link to route
         }
@@ -909,20 +1105,23 @@ void Host::recvRTD(cMessage* msg)
             temp = std::min(energyPC1 + getEnergyToParentMISO(), energyPC2 + getEnergyToParentMIMO());
             tp2 = std::min(temp, tp2);
         }
-        if (pnum == 0)
-        {
-            // tp1 = energy of path0 TODO
-            tp1 = energy_path0;
-            // for-loop to send message to connected nodes
-            for (int i = 0; i < numHosts; ++i)
-            {
 
-                if (!neighborSet[i])
-                {
-                    continue;
-                }
-                sendRTD(i, tp1,tp2);
+    }
+    if (pnum == 0)
+    {
+        // tp1 = energy of path0 TODO
+        tp1 = energy_path0;
+        // for-loop to send message to connected nodes
+        for (int i = 0; i < numHosts; ++i)
+        {
+
+            if (!neighborSet[i])
+            {
+                continue;
             }
+            sendRTD(i, tp1,tp2);
+            rtdTerminated = 1;
+            double tempMin = std::min(tp1,tp2);
 
         }
     }
@@ -941,8 +1140,9 @@ void Host::sendRTD(int targetHost, double pc1, double pc2)
 
     radioDelay = dist / propagationSpeed;
 
-    char pkname[80];
+    char pkname[99];
     double  energyPairedToBase;
+    /*
     if (myPartnerId > -1)
     {
         energyPairedToBase = this->energyPairedToBase;
@@ -951,7 +1151,8 @@ void Host::sendRTD(int targetHost, double pc1, double pc2)
     {
         energyPairedToBase = INFINITY;
     }
-    sprintf(pkname, "RouteDiscovery-%03d-rtd(%03d,%012.5lf,%012.5lf)", this->hostId, this->hostId, this->energyAloneToBase, energyPairedToBase);
+    */
+    sprintf(pkname, "rtd(%03d,%042.38lf,%042.38lf)", this->hostId, pc1, pc2);
 
 
     EV << "generating packet " << pkname << endl;
@@ -1046,6 +1247,10 @@ double Host::getPath_8_Energy(double pc2)
 }
 double Host::getEnergyToParentSISO()
 {
+    if (this->myParentId == -1)
+    {
+       return INFINITY;
+    }
     return calculateEnergyConsumptionPerBit(0, this->myParentId, 0, 1, 1, 1);
 }
 double Host::getEnergyToParentsParentSISO()

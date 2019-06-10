@@ -15,10 +15,15 @@
 network VirtualMIMO
 {
     parameters:
+        @signal[mtd_calc](type="double");
+        @signal[mimo_calc](type="double");
+        @statistic[totalEnergyMTDStats](title="total energy mtd"; source="mtd_calc"; record=vector,stats; interpolationmode=none);
+        @statistic[totalEnergyMIMOStats](title="total energy mimo"; source="mimo_calc"; record=vector,stats; interpolationmode=none);
+        
         int numHosts;  // number of hosts
         double maxRange @unit(m) = default(200m); //maximum commnunication range        
         double slotTime @unit(ms);  // zero means no slots (pure Aloha)
-        
+        int square @unit(m);
         
         int baseStationId = default(0);
         
