@@ -13,7 +13,7 @@
 #include <string.h>
 using namespace std;
 namespace aloha {
-#define INFINITY 1e999
+
 Define_Module(Host);
 
 Host::Host()
@@ -349,8 +349,6 @@ void Host::handleBellmanFordMessage(cMessage* msg)
     if (std::pow(_dist, 2) + newDistance < shortestPathDistance)
     {
         shortestPathDistance = std::pow(_dist, 2) + newDistance;
-        //TODO
-        //fix the distance, should be powered by 2
         shortestPath[senderHost] = shortestPathDistance;
     EV << "Found better path through host[" << senderHost << "] d=" << shortestPathDistance << endl;
     }
@@ -534,7 +532,6 @@ void Host::handleMessage(cMessage *msg)
     }
 }
 
-
 simtime_t Host::getNextTransmissionTime()
 {
     simtime_t t = simTime() + iaTime->doubleValue();
@@ -661,7 +658,7 @@ void Host::refreshDisplay() const
 }
 double Host::calculateEnergyConsumptionPerBit(int _w, int _v,  int _t, int numTx, int numRx ,int bitsCount)
 {
-    //TODO
+
 
     double energyPerBit = 0;
     double constSize = getParentModule()->par("constellation").doubleValue();
@@ -769,7 +766,7 @@ void Host::recvPTS(cMessage* msg)
         sendDCT(i, 1, senderHost);
     }
     setPartner(senderHost);
-    //Finished = true TODO
+
 }
 void Host::recvEnergy(cMessage* msg)
 {
@@ -794,7 +791,7 @@ void Host::recvEnergy(cMessage* msg)
 
         // collect data
     }
-    //Finished = true TODO
+
 }
 void Host::recvEnergyMTD(cMessage* msg)
 {
@@ -819,7 +816,7 @@ void Host::recvEnergyMTD(cMessage* msg)
 
         // collect data
     }
-    //Finished = true TODO
+
 }
 void Host::recvDCT(cMessage* msg)
 {
@@ -850,8 +847,8 @@ void Host::recvDCT(cMessage* msg)
             //else
             //calculate the weight W_(u,w) eq. 7 page 6.
             //W_(u,w) = W_(child, self)
-
-            weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergy(hostId, senderHost)/*TODO -otherThing() */;
+            weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1) - calculateEnergyConsumptionPerBit(i, myParentId, 0, 2, 1, 1);
+            //weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergy(hostId, senderHost)/*TODO -otherThing() */;
             if (weight > maximalWeight)
             {
                 maximalWeight = weight;
@@ -872,8 +869,14 @@ void Host::recvDCT(cMessage* msg)
             //else
             //calculate the weight W_(u,w) eq. 7 page 6.
             //W_(u,w) = W_(child, self)
-
-            weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergy(hostId, senderHost) /*TODO -otherMIMOs() */;
+            double p_uw_v = calculateEnergyConsumptionPerBit(i, myParentId, 0, 2, 1, 1); //p_{u,w}_v
+            double p_uw_t = calculateEnergyConsumptionPerBit(i, myParentsPartnerId, 0, 2, 1, 1); //p_{u,w}_t
+            double p_uw_vt = calculateEnergyConsumptionPerBit(i, myParentId, myParentsPartnerId, 2, 2, 1); //p_{u,w}_{v,t}
+            double temp = std::min(p_uw_v,p_uw_t);
+            temp = std::min(temp,p_uw_vt);
+            //weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1);
+            weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1) - temp;
+            //weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergyToParentSISO() - calculateEnergyConsumptionPerBit(i, myParentId, 0, 2, 1, 1)  /*TODO -otherMIMOs() */;
             if (weight > maximalWeight)
             {
                 maximalWeight = weight;
@@ -974,8 +977,8 @@ void    Host::setPartner(int targetHost)
 }
 double  Host::getEnergy(int v, int u)
 {
-    Host *host_v = check_and_cast<Host *>(hosts[v]);
-    return std::pow(host_v->distHosts[u],2);
+    Host *host_u = check_and_cast<Host *>(hosts[u]);
+    return host_u->calculateEnergyConsumptionPerBit(0, v, 0, 1, 1, 1);;
 }
 void Host::sendDCT(int targetHost, bool paired, int hostId)
 {
