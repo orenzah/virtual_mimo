@@ -1,12 +1,12 @@
 #
-# OMNeT++/OMNEST Makefile for virtual_mimo_aloha
+# OMNeT++/OMNEST Makefile for virtual_mimo
 #
 # This file was generated with the command:
 #  opp_makemake -f --deep
 #
 
 # Name of target to be created (-o option)
-TARGET = virtual_mimo_aloha$(D)$(EXE_SUFFIX)
+TARGET = virtual_mimo$(D)$(EXE_SUFFIX)
 TARGET_DIR = .
 
 # User interface (uncomment one) (-u option)
@@ -30,7 +30,7 @@ PROJECTRELATIVE_PATH =
 O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 
 # Object files for local .cc, .msg and .sm files
-OBJS = $O/Host.o $O/Server.o
+OBJS = $O/Host.o
 
 # Message files
 MSGFILES =

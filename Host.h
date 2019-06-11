@@ -25,6 +25,8 @@ public:
     double  *distHosts;
 
   private:
+    // routing parameters
+    enum { SISO = 0, SIMO = 1, MISO = 2, MIMO = 3 } modeTxRx;
     // parameters
     simtime_t radioDelay;
     int hostId;
