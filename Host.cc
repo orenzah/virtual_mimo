@@ -439,7 +439,7 @@ void Host::sendEnergyMTD(double energy)
 void Host::handleMessage(cMessage *msg)
 {
     //ASSERT(msg == endTxEvent);
-    cout << "I'm host[" << hostId << "] " << msg->getName() << endl;
+
     if (msg->isSelfMessage())
     {
         if (strcmp(msg->getName(), "initTx") == 0)
@@ -530,6 +530,7 @@ void Host::handleMessage(cMessage *msg)
             recvEnergyMTD(msg);
         }
     }
+    delete msg;
 }
 
 simtime_t Host::getNextTransmissionTime()
@@ -847,7 +848,7 @@ void Host::recvDCT(cMessage* msg)
             //else
             //calculate the weight W_(u,w) eq. 7 page 6.
             //W_(u,w) = W_(child, self)
-            weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1) - calculateEnergyConsumptionPerBit(i, myParentId, 0, 2, 1, 1);
+            weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1)+calculateEnergyConsumptionPerBit(0, myParentId, 0, 1, 1, 1) - calculateEnergyConsumptionPerBit(i, myParentId, 0, 2, 1, 1);
             //weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergy(hostId, senderHost)/*TODO -otherThing() */;
             if (weight > maximalWeight)
             {
@@ -875,7 +876,7 @@ void Host::recvDCT(cMessage* msg)
             double temp = std::min(p_uw_v,p_uw_t);
             temp = std::min(temp,p_uw_vt);
             //weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1);
-            weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1) - temp;
+            weight = (0.5 - gamma) * calculateEnergyConsumptionPerBit(0, i, 0, 1, 1, 1)+calculateEnergyConsumptionPerBit(0, myParentId, 0, 1, 1, 1) - temp;
             //weight = (0.5 - gamma) * getEnergy(i, hostId) + getEnergyToParentSISO() - calculateEnergyConsumptionPerBit(i, myParentId, 0, 2, 1, 1)  /*TODO -otherMIMOs() */;
             if (weight > maximalWeight)
             {
